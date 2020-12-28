@@ -114,7 +114,7 @@ int tftp_recv(tftp_c *tc) {
   size_all = 0;
   while (1) {
     memset(recv.data, 0, sizeof(recv.data));
-    for (timer = 0; timer < WAIT_TIMEOUT * 4; timer += 10000) {
+    for (timer = 0; timer < WAIT_TIMEOUT; timer += 10000) {
       re = recvfrom(tc->sockfd, &recv, sizeof(tftp_recv_pack), MSG_DONTWAIT,
                     ((sockaddr *)&tc->addr_server), &tc->addr_len);
       /* recv last package but not ack */
@@ -174,7 +174,7 @@ int tftp_recv(tftp_c *tc) {
         NextSendBlockNum = %d\n",
           re, ntohs(recv.opcode), ntohs(recv.bnum_ecode), blocknum);
     }
-    if (timer >= WAIT_TIMEOUT * 4) {
+    if (timer >= WAIT_TIMEOUT) {
       if (blocknum == 1) {
         now_time();
         cout << "ERROR:fail to send request to server" << endl;
@@ -216,7 +216,7 @@ int tftp_put(tftp_c *tc) {
     fprintf(log_fp, "ERROR:fail to send request to server");
   }
   /* rec ack timeout*/
-  for (timer = 0; timer <= WAIT_TIMEOUT * 4; timer += 10000) {
+  for (timer = 0; timer <= WAIT_TIMEOUT; timer += 10000) {
     re = recvfrom(tc->sockfd, &recv, sizeof(tftp_recv_pack), MSG_DONTWAIT,
                   ((sockaddr *)&tc->addr_server), &tc->addr_len);
     if (recv.opcode == htons(OPCODE_ACK) && recv.bnum_ecode == htons(0)) {
@@ -225,7 +225,7 @@ int tftp_put(tftp_c *tc) {
     }
     usleep(10000);
   }
-  if (timer >= WAIT_TIMEOUT * 4) {
+  if (timer >= WAIT_TIMEOUT) {
     now_time();
     fprintf(log_fp, "ERROR:Recv Server Ack timeout\n");
     return 0;
