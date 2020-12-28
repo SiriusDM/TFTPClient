@@ -102,7 +102,6 @@ int tftp_recv(tftp_c *tc) {
   cout << "Download Start" << endl;
   fprintf(log_fp, "Download Start");
   FILE *fp = fopen(tc->file_name, "w");
-
   /* begin recv data */
   start_c = clock();
   size_all = 0;
@@ -189,6 +188,13 @@ int tftp_put(tftp_c *tc) {
   int re = 0, timer, go_flag = 0, stop_flag = 0;
   /* WRQ msg */
   snd->opcode = htons(OPCODE_WRQ);
+  FILE *fp = fopen(tc->file_name, "r");
+    if (fp == NULL) {
+      now_time();
+      cout << "ERROR: non-exist file" << endl;
+      fprintf(log_fp, "ERROR: non-exist file\n");
+      return 0;
+    }
   sprintf(snd->req, "%s%c%s%c", tc->file_name, 0, tc->mode, 0);
   /* send WRQ 2 server */
   re = sendto(tc->sockfd, snd, TFTP_WRQ_LEN(tc->file_name, tc->mode), 0,
@@ -217,16 +223,9 @@ int tftp_put(tftp_c *tc) {
     now_time();
     printf("Upload Start\n");
     fprintf(log_fp, "Upload Start\n");
-    FILE *fp = fopen(tc->file_name, "r");
     size_all = 0;
     start_c = clock();
     //    printf("%s\n",tc->file_name);
-    if (fp == NULL) {
-      now_time();
-      cout << "ERROR: non-exist file" << endl;
-      fprintf(log_fp, "ERROR: non-exist file\n");
-      return 0;
-    }
     int blocknum = 1;
     int size_t;
     snd_data.opcode = htons(OPCODE_DATA);
