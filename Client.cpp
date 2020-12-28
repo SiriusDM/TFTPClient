@@ -25,8 +25,7 @@ int main(void) {
   cout<<"========================DEBUG=================================\n"<<endl;*/
 
   /* Connect to TFTP Server */
-  tc = tftp_connect(host_name, port4addr, (char *)MODE_OCTET, type,
-                    file_name);
+  tc = tftp_connect(host_name, port4addr, (char *)MODE_OCTET, type, file_name);
   if (!tc) {
     now_time();
     cout << "ERROR:fail to connect to server" << endl;
@@ -125,24 +124,25 @@ int tftp_recv(tftp_c *tc) {
   size_all = 0;
   while (1) {
     memset(recv.data, 0, sizeof(recv.data));
-    for (timer = 0; timer < RECV_TIMEOUT*4; timer += 10000) {
+    for (timer = 0; timer < WAIT_TIMEOUT * 4; timer += 10000) {
       re = recvfrom(tc->sockfd, &recv, sizeof(tftp_recv_pack), MSG_DONTWAIT,
                     ((sockaddr *)&tc->addr_server), &tc->addr_len);
       /* recv last package but not ack */
-      if (blocknum == ntohs(recv.bnum_ecode) +1) {
+      if (blocknum == ntohs(recv.bnum_ecode) + 1) {
         ack.opcode = htons(OPCODE_ACK);
         ack.blocknum = recv.bnum_ecode;
         sendto(tc->sockfd, &ack, sizeof(tftp_ack), 0,
                ((sockaddr *)&tc->addr_server), tc->addr_len);
       }
       /* recv success & send ACK */
-      // TODO:Throughput
       if (recv.opcode == htons(OPCODE_DATA) &&
           recv.bnum_ecode == htons(blocknum)) {
-            now_time();
-            cout<<"DATA: BlockNum = "<<ntohs(recv.bnum_ecode)<<", DataSize = "<<(re - 4)<<endl; 
-            fprintf(log_fp,"DATA: BlockNum = %d, DataSize = %d\n", ntohs(recv.bnum_ecode), (re-4));
-        //fprintf(fp, "%s", recv.data);
+        now_time();
+        cout << "DATA: BlockNum = " << ntohs(recv.bnum_ecode)
+             << ", DataSize = " << (re - 4) << endl;
+        fprintf(log_fp, "DATA: BlockNum = %d, DataSize = %d\n",
+                ntohs(recv.bnum_ecode), (re - 4));
+        // fprintf(fp, "%s", recv.data);
         fwrite(recv.data, 1, re - 4, fp);
         /* record re */
         size_all += re;
@@ -161,7 +161,7 @@ int tftp_recv(tftp_c *tc) {
 
           /* statistic this download */
           fprintf(log_fp, "\n=================================\n");
-              fprintf(log_fp,"file size = %lf kB\n", (size_all)/1024);
+          fprintf(log_fp, "file size = %lf kB\n", (size_all) / 1024);
           //    fprintf(log_fp,"download time = %lf s\n", time_all);
           fprintf(log_fp, "this download average throughout  = %.2lf kB/s",
                   size_all / (1024 * time_all));
@@ -171,17 +171,17 @@ int tftp_recv(tftp_c *tc) {
         break;
       }
       /* ========================DEBUG================================= */
-     /* cout<<"========================DEBUG================================="<<endl;
-      cout<<"re = "<<re<<endl;
-      cout<<"recv.opcode = "<<ntohs(recv.opcode)<<endl;
-      cout<<"recv.bnum_ecode = "<<ntohs(recv.bnum_ecode)<<endl;
-      cout<<"blocknum = "<<blocknum<<endl;
-      cout<<"========================DEBUG=z================================"<<endl;*/
+      /* cout<<"========================DEBUG================================="<<endl;
+       cout<<"re = "<<re<<endl;
+       cout<<"recv.opcode = "<<ntohs(recv.opcode)<<endl;
+       cout<<"recv.bnum_ecode = "<<ntohs(recv.bnum_ecode)<<endl;
+       cout<<"blocknum = "<<blocknum<<endl;
+       cout<<"========================DEBUG=z================================"<<endl;*/
 
       /* the last block size < 512, end recv */
       usleep(10000);  // recv delay
     }
-    if (timer >= RECV_TIMEOUT * 4) {
+    if (timer >= WAIT_TIMEOUT * 4) {
       if (blocknum == 1) {
         now_time();
         cout << "ERROR:fail to send request to server" << endl;
@@ -203,7 +203,7 @@ int tftp_put(tftp_c *tc) {
   tftp_wrq *snd = (tftp_wrq *)malloc(TFTP_WRQ_LEN(tc->file_name, tc->mode));
   tftp_recv_pack recv;
   tftp_data snd_data;
-  int re = 0;
+  int re = 0, timer, go_flag = 0, stop_flag = 0;
   /* WRQ msg */
   snd->opcode = htons(OPCODE_WRQ);
   sprintf(snd->req, "%s%c%s%c", tc->file_name, 0, tc->mode, 0);
@@ -215,22 +215,29 @@ int tftp_put(tftp_c *tc) {
     cout << "ERROR:fail to send request to server" << endl;
     fprintf(log_fp, "ERROR:fail to send request to server");
   }
-  re = recvfrom(tc->sockfd, &recv, sizeof(tftp_recv_pack), 0,
-                ((sockaddr *)&tc->addr_server), &tc->addr_len);
-  if (re == -1) {
+  /* rec ack timeout*/
+  for (timer = 0; timer <= WAIT_TIMEOUT * 4; timer += 10000) {
+    re = recvfrom(tc->sockfd, &recv, sizeof(tftp_recv_pack), MSG_DONTWAIT,
+                  ((sockaddr *)&tc->addr_server), &tc->addr_len);
+    if (recv.opcode == htons(OPCODE_ACK) && recv.bnum_ecode == htons(0)) {
+      go_flag = 1;  // ack yes => begin upload
+      break;
+    }
+    usleep(10000);
+  }
+  if (timer >= WAIT_TIMEOUT * 4) {
     now_time();
-    cout << "ERROR:fail to recv from server" << endl;
-    fprintf(log_fp, "ERROR:fail to recv from server\n");
+    fprintf(log_fp, "ERROR:Recv Server Ack timeout\n");
     return 0;
-
-  } /* recv blocknum=0 => start transfer */
+  }
+  /* recv blocknum=0 => start transfer */
   /*  cout<<"========================DEBUG================================="<<endl;
                 cout<<"re = "<<re<<endl;
                 cout<<"recv.opcode = "<<ntohs(recv.opcode)<<endl;
                 cout<<"recv.bnum_ecode = "<<ntohs(recv.bnum_ecode)<<endl;
          //       cout<<"blocknum = "<<blocknum<<endl;
                 cout<<"========================DEBUG=z================================"<<endl;*/
-  if (recv.opcode == htons(OPCODE_ACK) && recv.bnum_ecode == htons(0)) {
+  if (go_flag) {
     now_time();
     printf("Upload Start\n");
     fprintf(log_fp, "Upload Start\n");
@@ -255,56 +262,50 @@ int tftp_put(tftp_c *tc) {
       size_t = fread(snd_data.data, 1, DATA_SIZE, fp);
       //    printf("%s\n", snd_data.data);
       /* send data 2 server */
-      re = sendto(tc->sockfd, &snd_data, size_t + 4, 0,
-                  ((sockaddr *)&tc->addr_server), tc->addr_len);
-      if (re == -1) {
-        now_time();
-        cout << "ERROR: fail to send data to server" << endl;
-        fprintf(log_fp, "ERROR: fail to send data to server\n");
-        return 0;
-      }
-      size_all += re;
-      /* recv from server (ACK|ERROR) */
-      re = recvfrom(tc->sockfd, &recv, sizeof(tftp_recv_pack), 0,
-                    ((sockaddr *)&tc->addr_server), &tc->addr_len);
-      if (re == -1) {
-        now_time();
-        cout << "ERROR: fail to recv ACK from server" << endl;
-        fprintf(log_fp, "ERROR: fail to recv ACK from server\n");
-        return 0;
-      }
-      /* ack yes */
-      if (recv.opcode == htons(OPCODE_ACK) &&
-          recv.bnum_ecode == htons(blocknum)) {
+      for (timer = 0; timer <= WAIT_TIMEOUT; timer += 10000) {
+        re = sendto(tc->sockfd, &snd_data, size_t + 4, MSG_DONTWAIT,
+                    ((sockaddr *)&tc->addr_server), tc->addr_len);
+        /* Count the sum of file */
         size_all += re;
-        blocknum++;
-      }
-      /* ========================DEBUG================================= */
-      /* cout<<"========================DEBUG================================="<<endl;
-      cout<<"re = "<<re<<endl;
-      cout<<"recv.opcode = "<<ntohs(recv.opcode)<<endl;
-      cout<<"recv.bnum_ecode = "<<ntohs(recv.bnum_ecode)<<endl;
-      cout<<"blocknum = "<<blocknum<<endl;
-      cout<<"========================DEBUG================================"<<endl;
-    */
-      if (size_t != DATA_SIZE) {
-        /* end of recv */
-        end_c = clock();
-        time_all = (double)(end_c - start_c) / CLOCKS_PER_SEC;
+        /* recv from server (ACK|ERROR) */
+        re = recvfrom(tc->sockfd, &recv, sizeof(tftp_recv_pack), MSG_DONTWAIT,
+                      ((sockaddr *)&tc->addr_server), &tc->addr_len);
+        /* ack yes */
+        if (recv.opcode == htons(OPCODE_ACK) &&
+            recv.bnum_ecode == htons(blocknum)) {
+          size_all += re;
+          blocknum++;
+          if (size_t != DATA_SIZE) {
+            /* end of recv */
+            end_c = clock();
+            time_all = (double)(end_c - start_c) / CLOCKS_PER_SEC;
 
-        now_time();
-        printf("Upload Finish\n");
-        fprintf(log_fp, "Upload Finish\n");
+            now_time();
+            printf("Upload Finish\n");
+            fprintf(log_fp, "Upload Finish\n");
 
-        /* statistic this upload */
-        fprintf(log_fp, "\n======================================\n");
-        //    fprintf(log_fp,"file size = %lf kB\n", (size_all)/1024);
-        //    fprintf(log_fp,"upload time = %lf s\n", time_all);
-        fprintf(log_fp, "this upload average throughout  = %.2lf kB/s",
-                size_all / (1024 * time_all));
-        fprintf(log_fp, "\n======================================\n");
-        break;
+            /* statistic this upload */
+            fprintf(log_fp, "\n======================================\n");
+            //    fprintf(log_fp,"file size = %lf kB\n", (size_all)/1024);
+            //    fprintf(log_fp,"upload time = %lf s\n", time_all);
+            fprintf(log_fp, "this upload average throughout  = %.2lf kB/s",
+                    size_all / (1024 * time_all));
+            fprintf(log_fp, "\n======================================\n");
+            stop_flag = 1;
+          }
+          break;
+        }
+        usleep(10000);
+        /* ========================DEBUG================================= */
+         cout<<"========================DEBUG================================="<<endl;
+        cout<<"re = "<<re<<endl;
+        cout<<"recv.opcode = "<<ntohs(recv.opcode)<<endl;
+        cout<<"recv.bnum_ecode = "<<ntohs(recv.bnum_ecode)<<endl;
+        cout<<"blocknum = "<<blocknum<<endl;
+        cout<<"========================DEBUG================================"<<endl;
+      
       }
+      if (stop_flag) break;
     }
     fclose(fp);
   }
