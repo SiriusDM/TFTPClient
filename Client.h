@@ -9,8 +9,7 @@
 #include <unistd.h>
 #include <time.h>
 /* TIMEOUT SET 3 SECOND */
-#define RECV_TIMEOUT 3*1000*1000
-#define SEND_TIMEOUT 12*1000*1000
+#define WAIT_TIMEOUT 3*1000*1000
 /* TFTP MODE */
 #define MODE_NETASCII "netascii"
 #define MODE_OCTET "octet"
